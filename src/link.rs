@@ -110,3 +110,178 @@ pub fn verify_link_wt<E: PairingEngine>(
 
     Ok(true)
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    use ark_bls12_381::Bls12_381 as F;
+    use ark_crypto_primitives::prf::{
+        blake2s::{constraints::Blake2sGadget, Blake2s},
+        PRFGadget, PRF,
+    };
+    use ark_ec::PairingEngine;
+    use ark_ff::{BigInteger, Field, PrimeField};
+    use ark_r1cs_std::{
+        alloc::AllocVar, bits::ToBytesGadget, eq::EqGadget, fields::fp::FpVar, uint8::UInt8,
+    };
+    use ark_relations::{
+        ns,
+        r1cs::{ConstraintSynthesizer, ConstraintSystemRef, SynthesisError, ToConstraintField},
+    };
+    type Fr = <F as PairingEngine>::Fr;
+
+    /// Depending on use_ki, this circuit will do one of three things:
+    ///   If use_ki = 1 this circuit proves `H(domain_str, k1) = digest`, where
+    ///     all variables are public input.
+    ///   If use_ki = 2 this circuit proves `H(domain_str, k2) = digest`, where
+    ///     all variables are public input.
+    ///   If use_ki = 3 is set, this circuit proves `H(H(domain_str, k1), k2) = digest`, where
+    ///     all variables are public input.
+    /// Later, we will make `k1` and `k2` hidden by the Groth-Sahai proof.
+    #[derive(Clone)]
+    struct HashPreimageCircuit<ConstraintF: Field> {
+        use_ki: usize,
+        k1: ConstraintF,
+        k2: ConstraintF,
+        domain_str: [u8; 32],
+        digest: [u8; 32],
+    }
+
+    impl<ConstraintF: PrimeField> ConstraintSynthesizer<ConstraintF>
+        for HashPreimageCircuit<ConstraintF>
+    {
+        fn generate_constraints(
+            self,
+            cs: ConstraintSystemRef<ConstraintF>,
+        ) -> Result<(), SynthesisError> {
+            // Get k1,k2 as PUBLIC input
+            let k1 = FpVar::<ConstraintF>::new_input(ns!(cs, "preimage"), || Ok(self.k1))?;
+            let k2 = FpVar::<ConstraintF>::new_input(ns!(cs, "preimage"), || Ok(self.k2))?;
+
+            // Get the domain str and hash as well
+            let domain_str: Vec<UInt8<ConstraintF>> =
+                UInt8::new_input_vec(ns!(cs, "domain_str"), &self.domain_str)?;
+            let expected_digest = UInt8::new_input_vec(ns!(cs, "digest"), &self.digest)?;
+
+            let computed_digest = match self.use_ki {
+                1 => {
+                    // Compute `H(domain_str, k1)`
+                    Blake2sGadget::evaluate(&domain_str, &k1.to_bytes()?)?
+                }
+                2 => {
+                    // Compute `H(domain_str, k2)`
+                    Blake2sGadget::evaluate(&domain_str, &k2.to_bytes()?)?
+                }
+                3 => {
+                    // Compute `H(H(domain_str, k1), k2)`
+                    let inner_digest = Blake2sGadget::evaluate(&domain_str, &k1.to_bytes()?)?;
+                    Blake2sGadget::evaluate(&inner_digest.0, &k2.to_bytes()?)?
+                }
+                _ => panic!("use_ki must be 1, 2, or 3"),
+            };
+            // Enforce that the provided digest equals the computed one
+            expected_digest.enforce_equal(&computed_digest.0)
+        }
+    }
+
+    impl<ConstraintF: PrimeField> HashPreimageCircuit<ConstraintF> {
+        /// Generates a proving key for this circuit for a specific choice of use_ki
+        fn gen_crs<E, R>(rng: &mut R, use_ki: usize) -> ProvingKey<E>
+        where
+            E: PairingEngine<Fr = ConstraintF>,
+            R: Rng,
+        {
+            let placeholder_bytes = *b"XXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXX";
+            let placeholder_circuit = HashPreimageCircuit {
+                use_ki,
+                k1: E::Fr::zero(),
+                k2: E::Fr::zero(),
+                domain_str: placeholder_bytes,
+                digest: placeholder_bytes,
+            };
+            generate_random_parameters::<E, _, _>(placeholder_circuit, rng).unwrap()
+        }
+
+        /// Proves this circuit with the given inputs. Returns the serialized public inputs and the
+        /// Groth16 proof.
+        fn prove<E, R>(
+            rng: &mut R,
+            pk: &ProvingKey<E>,
+            use_ki: usize,
+            k1: E::Fr,
+            k2: E::Fr,
+            domain_str: [u8; 32],
+        ) -> (Vec<ConstraintF>, Proof<E>)
+        where
+            E: PairingEngine<Fr = ConstraintF>,
+            R: Rng,
+        {
+            // Compute the digest we need to prove
+            let mut k1_bytes = [0u8; 32];
+            let mut k2_bytes = [0u8; 32];
+            k1_bytes.copy_from_slice(&k1.into_repr().to_bytes_le());
+            k2_bytes.copy_from_slice(&k2.into_repr().to_bytes_le());
+            let digest = match use_ki {
+                1 => {
+                    // H(domain_str, k1)
+                    Blake2s::evaluate(&domain_str, &k1_bytes).unwrap()
+                }
+                2 => {
+                    // H(domain_str, k2)
+                    Blake2s::evaluate(&domain_str, &k2_bytes).unwrap()
+                }
+                3 => {
+                    // H(H(domain_str, k1), k2)
+                    let inner_digest = Blake2s::evaluate(&domain_str, &k1_bytes).unwrap();
+                    Blake2s::evaluate(&inner_digest, &k2_bytes).unwrap()
+                }
+                _ => {
+                    panic!("use_ki must be 1, 2, or 3");
+                }
+            };
+
+            // Make the circuit and prove it
+            let circuit = HashPreimageCircuit {
+                use_ki,
+                k1,
+                k2,
+                domain_str,
+                digest,
+            };
+            let proof = create_random_proof::<E, _, _>(circuit, pk, rng).unwrap();
+
+            // Serialize all the public inputs
+            let public_inputs = [
+                k1.to_field_elements().unwrap(),
+                k2.to_field_elements().unwrap(),
+                domain_str.to_field_elements().unwrap(),
+                digest.to_field_elements().unwrap(),
+            ]
+            .concat();
+
+            (public_inputs, proof)
+        }
+    }
+
+    /// We test the preimage circuit here
+    #[test]
+    fn test_preimage_circuit_correctness() {
+        let mut rng = ark_std::test_rng();
+
+        // Set the parameters of this circuit. Do the full double-hash, i.e., use_ki = 3
+        let use_ki = 3;
+        let domain_str = *b"goodbye my coney island babyyyyy";
+        let k1 = Fr::from(1337u32);
+        let k2 = Fr::from(0xdeadbeefu32);
+
+        // Generate the CRS and then prove on the above parameters
+        let pk = HashPreimageCircuit::gen_crs::<F, _>(&mut rng, use_ki);
+        let (public_inputs, proof) =
+            HashPreimageCircuit::prove(&mut rng, &pk, use_ki, k1, k2, domain_str);
+
+        // Now verify the proof
+        let pvk = pk.verifying_key().prepare();
+        assert!(verify_proof(&pvk, &proof, &public_inputs).unwrap());
+    }
+}
