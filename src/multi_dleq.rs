@@ -15,12 +15,12 @@ const DOMAIN_STR: &[u8] = b"LinkG16-multi-dleq";
 /// Hidden Wire Well-formedness proof. Encodes a sigma proof for the relation
 /// ZK { ({Uⱼ, Gⱼ, Hⱼ}; w, {xⱼ}) : ∧ Uⱼ = wGⱼ+xⱼHⱼ }
 #[derive(CanonicalDeserialize, CanonicalSerialize, Clone)]
-pub(crate) struct MultiDleqProof<G>
+pub struct MultiDleqProof<G>
 where
     G: Group + CanonicalSerialize + CanonicalDeserialize,
 {
-    pub(crate) coms: Vec<G>,
-    pub(crate) resp: (G::ScalarField, Vec<G::ScalarField>),
+    pub coms: Vec<G>,
+    pub resp: (G::ScalarField, Vec<G::ScalarField>),
 }
 
 /// Proves ZK { ({Uⱼ, Gⱼ, Hⱼ}; w, {xⱼ}) : ∧ Uⱼ = wGⱼ+xⱼHⱼ }. Uses the context provided by
