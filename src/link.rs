@@ -253,7 +253,7 @@ mod tests {
 
             // Serialize all the public inputs
             let public_inputs = [
-                k1.to_field_elements().unwrap(),
+                vec![ConstraintF::zero()],
                 k2.to_field_elements().unwrap(),
                 domain_str.to_field_elements().unwrap(),
                 digest.to_field_elements().unwrap(),
@@ -283,5 +283,87 @@ mod tests {
         // Now verify the proof
         let pvk = pk.verifying_key().prepare();
         assert!(verify_proof(&pvk, &proof, &public_inputs).unwrap());
+    }
+
+    /// In this test we make three circuits. One computes `H(domain_str1, k1)`. One computes
+    /// `H(H(domain_str2, k1), k2)`. One computes `H(domain_str1, k2)`. We then prove that all of
+    /// these circuits share the same `k1,k2`.
+    #[test]
+    fn test_preimage_circuit_linkage() {
+        let mut rng = ark_std::test_rng();
+
+        // Set the parameters of this circuit
+        let k1 = Fr::from(1337u32);
+        let k2 = Fr::from(0xdeadbeefu32);
+        let domain_str1 = *b"goodbye my coney island babyyyyy";
+        let domain_str2 = *b"goodbye my one true loveeeeeeeee";
+
+        // Generate the CRSs and then prove on the above parameters. single1 is the circuit that
+        // computes `H(domain_str1, k1)`. single2 computes `H(domain_str1, k2)`. double computes
+        // `H(H(domain_str2, k1), k2)`.
+        let pk_single1 = HashPreimageCircuit::gen_crs::<F, _>(&mut rng, 1);
+        let pk_single2 = HashPreimageCircuit::gen_crs::<F, _>(&mut rng, 2);
+        let pk_double = HashPreimageCircuit::gen_crs::<F, _>(&mut rng, 3);
+        let (public_inputs_single1, proof_single1) =
+            HashPreimageCircuit::prove(&mut rng, &pk_single1, 1, k1, k2, domain_str1);
+        let (public_inputs_single2, proof_single2) =
+            HashPreimageCircuit::prove(&mut rng, &pk_single2, 2, k1, k2, domain_str1);
+        let (public_inputs_double, proof_double) =
+            HashPreimageCircuit::prove(&mut rng, &pk_double, 3, k1, k2, domain_str2);
+
+        // Verify the proofs
+        let pvk_single1 = pk_single1.verifying_key().prepare();
+        let pvk_single2 = pk_single2.verifying_key().prepare();
+        let pvk_double = pk_double.verifying_key().prepare();
+        assert!(verify_proof(&pvk_single1, &proof_single1, &public_inputs_single1).unwrap());
+        assert!(verify_proof(&pvk_single2, &proof_single2, &public_inputs_single2).unwrap());
+        assert!(verify_proof(&pvk_double, &proof_double, &public_inputs_double).unwrap());
+
+        // Now do a GS-over-canon-Groth16 and verify that. This does not hide k1 or k2
+        let prepared_input_single1 = prepare_inputs(&pvk_single1, &public_inputs_single1).unwrap();
+        let prepared_input_single2 = prepare_inputs(&pvk_single2, &public_inputs_single2).unwrap();
+        let prepared_input_double = prepare_inputs(&pvk_double, &public_inputs_double).unwrap();
+
+        let mut proving_transcript = Transcript::new(b"test_preimage_circuit_linkage");
+        let link_proof = link_wt(
+            &mut rng,
+            &mut proving_transcript,
+            &[
+                (
+                    &pk_single1.verifying_key(),
+                    &proof_single1,
+                    &prepared_input_single1,
+                ),
+                (
+                    &pk_single2.verifying_key(),
+                    &proof_single2,
+                    &prepared_input_single2,
+                ),
+                (
+                    &pk_double.verifying_key(),
+                    &proof_double,
+                    &prepared_input_double,
+                ),
+            ],
+            k1,
+        );
+
+        let mut verifying_transcript = Transcript::new(b"test_preimage_circuit_linkage");
+        assert!(verify_link_wt(
+            &mut verifying_transcript,
+            &link_proof,
+            &[
+                (
+                    &pk_single1.verifying_key().prepare(),
+                    &prepared_input_single1
+                ),
+                (
+                    &pk_single2.verifying_key().prepare(),
+                    &prepared_input_single2
+                ),
+                (&pk_double.verifying_key().prepare(), &prepared_input_double)
+            ],
+        )
+        .unwrap());
     }
 }

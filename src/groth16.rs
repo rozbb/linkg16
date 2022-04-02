@@ -110,3 +110,10 @@ pub fn verify_proof<E: PairingEngine>(
 ) -> R1CSResult<bool> {
     ark_groth16::verify_proof(&pvk.ark_pvk, &proof.0, public_inputs)
 }
+
+pub fn prepare_inputs<E: PairingEngine>(
+    pvk: &PreparedVerifyingKey<E>,
+    public_inputs: &[E::Fr],
+) -> Result<E::G1Projective, SynthesisError> {
+    ark_groth16::prepare_inputs(&pvk.ark_pvk, public_inputs)
+}
