@@ -258,8 +258,8 @@ mod tests {
 
             // Serialize all the public inputs
             let public_inputs = [
-                vec![ConstraintF::from(0u8)],
-                dbg!(k2.to_field_elements().unwrap()),
+                k1.to_field_elements().unwrap(),
+                k2.to_field_elements().unwrap(),
                 domain_str.to_field_elements().unwrap(),
                 digest.to_field_elements().unwrap(),
             ]
@@ -296,6 +296,7 @@ mod tests {
     #[test]
     fn test_preimage_circuit_linkage() {
         let mut rng = ark_std::test_rng();
+        let num_hidden_inputs = 1;
 
         // Set the parameters of this circuit
         let k1 = Fr::from(1337u32);
@@ -316,19 +317,15 @@ mod tests {
         let (public_inputs_double, proof_double) =
             HashPreimageCircuit::prove(&mut rng, &pk_double, 3, k1, k2, domain_str2);
 
-        // Verify the proofs
+        // Verify the proofs naively. This is just a sanity check
         let pvk_single1 = pk_single1.verifying_key().prepare();
         let pvk_single2 = pk_single2.verifying_key().prepare();
         let pvk_double = pk_double.verifying_key().prepare();
-        //assert!(verify_proof(&pvk_single1, &proof_single1, &public_inputs_single1).unwrap());
-        //assert!(verify_proof(&pvk_single2, &proof_single2, &public_inputs_single2).unwrap());
-        //assert!(verify_proof(&pvk_double, &proof_double, &public_inputs_double).unwrap());
+        assert!(verify_proof(&pvk_single1, &proof_single1, &public_inputs_single1).unwrap());
+        assert!(verify_proof(&pvk_single2, &proof_single2, &public_inputs_single2).unwrap());
+        assert!(verify_proof(&pvk_double, &proof_double, &public_inputs_double).unwrap());
 
-        // Now do a GS-over-canon-Groth16 and verify that. This does not hide k1 or k2
-        let prepared_input_single1 = prepare_inputs(&pvk_single1, &public_inputs_single1).unwrap();
-        let prepared_input_single2 = prepare_inputs(&pvk_single2, &public_inputs_single2).unwrap();
-        let prepared_input_double = prepare_inputs(&pvk_double, &public_inputs_double).unwrap();
-
+        // Now the linkage test. Construct a linkage proof
         let mut proving_transcript = Transcript::new(b"test_preimage_circuit_linkage");
         let link_proof = link_wt(
             &mut rng,
@@ -340,6 +337,15 @@ mod tests {
             ],
             k1,
         );
+
+        // Now the veriifer checks the proofs. Note, the verifier does not know the common inputs,
+        // and so we slice those out.
+        let prepared_input_single1 =
+            prepare_inputs(&pvk_single1, &public_inputs_single1[num_hidden_inputs..]).unwrap();
+        let prepared_input_single2 =
+            prepare_inputs(&pvk_single2, &public_inputs_single2[num_hidden_inputs..]).unwrap();
+        let prepared_input_double =
+            prepare_inputs(&pvk_double, &public_inputs_double[num_hidden_inputs..]).unwrap();
 
         let mut verifying_transcript = Transcript::new(b"test_preimage_circuit_linkage");
         assert!(verify_link_wt(

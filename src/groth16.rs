@@ -1,11 +1,12 @@
 //! We have to implement a lot of the Groth16 API because we need verification keys to strore
 //! [δ]₁ as well as the generator of G1. We also need to make sure that γ = 1.
 
-use ark_ec::PairingEngine;
-use ark_ff::{One, UniformRand};
+use ark_ec::{AffineCurve, PairingEngine};
+use ark_ff::{One, PrimeField, UniformRand};
 use ark_relations::r1cs::{ConstraintSynthesizer, Result as R1CSResult, SynthesisError};
 use ark_serialize::{CanonicalDeserialize, CanonicalSerialize, Read, SerializationError, Write};
 use ark_std::rand::Rng;
+use core::ops::AddAssign;
 
 #[derive(CanonicalSerialize, CanonicalDeserialize, Clone, Debug)]
 pub struct ProvingKey<E: PairingEngine> {
@@ -111,9 +112,29 @@ pub fn verify_proof<E: PairingEngine>(
     ark_groth16::verify_proof(&pvk.ark_pvk, &proof.0, public_inputs)
 }
 
+// Prepares public inputs for verification. If the number of provided field elements is less than
+// the number of circuit public inputs, we assume it's because those are hidden and we pad it with
+// leading 0s.
 pub fn prepare_inputs<E: PairingEngine>(
     pvk: &PreparedVerifyingKey<E>,
     public_inputs: &[E::Fr],
 ) -> Result<E::G1Projective, SynthesisError> {
-    ark_groth16::prepare_inputs(&pvk.ark_pvk, public_inputs)
+    let pvk = &pvk.ark_pvk;
+    let mut g_ic = pvk.vk.gamma_abc_g1[0].into_projective();
+
+    if (public_inputs.len() + 1) > pvk.vk.gamma_abc_g1.len() {
+        return Err(SynthesisError::MalformedVerifyingKey);
+    }
+
+    // Collect inputs in reverse, stopping when we run out. This is the same as padding with
+    // leading 0s.
+    for (i, b) in public_inputs
+        .iter()
+        .rev()
+        .zip(pvk.vk.gamma_abc_g1.iter().rev())
+    {
+        g_ic.add_assign(&b.mul(i.into_repr()));
+    }
+
+    Ok(g_ic)
 }
