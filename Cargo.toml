@@ -16,3 +16,14 @@ merlin = "3"
 ark-bls12-381 = "0.3"
 ark-r1cs-std = "0.3"
 ark-crypto-primitives = { version = "0.3", features = [ "r1cs" ] }
+criterion = { version = "0.3", features = [ "html_reports" ] }
+
+[profile.release]
+debug = true
+
+[lib]
+bench = false
+
+[[bench]]
+name = "bench"
+harness = false
