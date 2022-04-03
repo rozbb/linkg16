@@ -1,6 +1,7 @@
 use crate::{
     groth16::*,
     multi_dleq::{prove_multi_dleq, verify_multi_dleq, MultiDleqProof},
+    util::dot_prod,
 };
 
 use ark_ec::{group::Group, AffineCurve, PairingEngine, ProjectiveCurve};
@@ -15,37 +16,59 @@ pub struct LinkedProof<E: PairingEngine> {
     pub blinded_wires: Vec<E::G1Projective>,
 }
 
+impl<E: PairingEngine> LinkedProof<E> {
+    fn num_linked_proofs(&self) -> usize {
+        self.mdleq_proof.resp.1.len()
+    }
+
+    fn num_hidden_inputs(&self) -> usize {
+        self.mdleq_proof.resp.0.len()
+    }
+}
+
 // Link Groth16 proofs (with transcript)
 pub fn link_wt<E, R>(
     rng: &mut R,
     transcript: &mut Transcript,
     data: &[(&VerifyingKey<E>, &Proof<E>)],
-    common_input: E::Fr,
+    common_inputs: &[E::Fr],
 ) -> LinkedProof<E>
 where
     E: PairingEngine,
     R: Rng + CryptoRng,
 {
     let num_proofs = data.len();
+    let num_common_inputs = common_inputs.len();
 
     // Sample the blinders zⱼ
     let zz: Vec<E::Fr> = core::iter::repeat_with(|| E::Fr::rand(rng))
         .take(num_proofs)
         .collect();
 
-    // Collect the W₀^(j) values
-    let ww: Vec<E::G1Projective> = data
+    // Collect the values
+    // {W₀{(1)}, ..., W_{t-1}^{(1)}},
+    // ...
+    // {W₀{(k)}, ..., W_{t-1}^{(k)}},
+    let www: Vec<Vec<E::G1Projective>> = data
         .iter()
-        .map(|(vk, _)| vk.ark_vk.gamma_abc_g1[1].into())
+        .map(|(vk, _)| {
+            vk.ark_vk.gamma_abc_g1[1..1 + num_common_inputs]
+                .iter()
+                .cloned()
+                .map(E::G1Projective::from)
+                .collect()
+        })
         .collect();
+
+    // Collect the [δ]₁^{(j)} values
     let deltas: Vec<E::G1Projective> = data.iter().map(|(vk, _)| vk.delta_g1).collect();
 
     // Commit to the common input for each circuit, Uⱼ := a₀W₀^(j) + zⱼ[δ]₁^(j)
-    let blinded_wires: Vec<E::G1Projective> = ww
+    let blinded_wires: Vec<E::G1Projective> = www
         .iter()
         .zip(deltas.iter())
         .zip(zz.iter())
-        .map(|((w, d), z)| w.mul(&common_input) + d.mul(z))
+        .map(|((ww, d), z)| dot_prod(common_inputs, ww) + d.mul(z))
         .collect();
 
     // Prove that uu are well-formed
@@ -53,9 +76,9 @@ where
         rng,
         transcript,
         &blinded_wires,
-        &ww,
+        &www,
         &deltas,
-        &common_input,
+        common_inputs,
         &zz,
     );
 
@@ -85,19 +108,34 @@ pub fn verify_link_wt<E: PairingEngine>(
     proof: &LinkedProof<E>,
     data: &[(&PreparedVerifyingKey<E>, &E::G1Projective)],
 ) -> Result<bool, SynthesisError> {
+    let num_proofs = proof.num_linked_proofs();
+    let num_common_inputs = proof.num_hidden_inputs();
+
+    // Check that the data we're getting matches the number of Groth16 proofs wrapped
+    assert_eq!(data.len(), num_proofs);
+
     let LinkedProof {
         mdleq_proof,
         blinded_proofs,
         blinded_wires,
     } = proof;
 
-    // First check the multidleq proof. Collect the wires and the deltas
-    let ww: Vec<E::G1Projective> = data
+    // Collect the values
+    // {W₀{(1)}, ..., W_{t-1}^{(1)}},
+    // ...
+    // {W₀{(k)}, ..., W_{t-1}^{(k)}},
+    let www: Vec<Vec<E::G1Projective>> = data
         .iter()
-        .map(|(pvk, _)| pvk.ark_pvk.vk.gamma_abc_g1[1].into())
+        .map(|(pvk, _)| {
+            pvk.ark_pvk.vk.gamma_abc_g1[1..1 + num_common_inputs]
+                .iter()
+                .cloned()
+                .map(E::G1Projective::from)
+                .collect()
+        })
         .collect();
     let deltas: Vec<E::G1Projective> = data.iter().map(|(vk, _)| vk.delta_g1).collect();
-    if !verify_multi_dleq(transcript, mdleq_proof, blinded_wires, &ww, &deltas) {
+    if !verify_multi_dleq(transcript, mdleq_proof, blinded_wires, &www, &deltas) {
         return Ok(false);
     }
 
@@ -296,13 +334,15 @@ mod tests {
     #[test]
     fn test_preimage_circuit_linkage() {
         let mut rng = ark_std::test_rng();
-        let num_hidden_inputs = 1;
 
         // Set the parameters of this circuit
         let k1 = Fr::from(1337u32);
         let k2 = Fr::from(0xdeadbeefu32);
         let domain_str1 = *b"goodbye my coney island babyyyyy";
         let domain_str2 = *b"goodbye my one true loveeeeeeeee";
+
+        let hidden_inputs = &[k1, k2];
+        let num_hidden_inputs = hidden_inputs.len();
 
         // Generate the CRSs and then prove on the above parameters. single1 is the circuit that
         // computes `H(domain_str1, k1)`. single2 computes `H(domain_str1, k2)`. double computes
@@ -335,7 +375,7 @@ mod tests {
                 (&pk_single2.verifying_key(), &proof_single2),
                 (&pk_double.verifying_key(), &proof_double),
             ],
-            k1,
+            hidden_inputs,
         );
 
         // Now the veriifer checks the proofs. Note, the verifier does not know the common inputs,
