@@ -7,9 +7,11 @@ use crate::{
 use ark_ec::{group::Group, AffineCurve, PairingEngine, ProjectiveCurve};
 use ark_ff::{PrimeField, UniformRand};
 use ark_relations::r1cs::SynthesisError;
+use ark_serialize::{CanonicalDeserialize, CanonicalSerialize, Read, SerializationError, Write};
 use ark_std::rand::{CryptoRng, Rng};
 use merlin::Transcript;
 
+#[derive(Clone, CanonicalSerialize, CanonicalDeserialize)]
 pub struct LinkedProof<E: PairingEngine> {
     pub mdleq_proof: MultiDleqProof<E::G1Projective>,
     pub blinded_proofs: Vec<BlindedProof<E>>,
@@ -63,7 +65,7 @@ where
     // Collect the [δ]₁^{(j)} values
     let deltas: Vec<E::G1Projective> = data.iter().map(|(vk, _)| vk.delta_g1).collect();
 
-    // Commit to the common input for each circuit, Uⱼ := a₀W₀^(j) + zⱼ[δ]₁^(j)
+    // Commit to the common input for each circuit, Uⱼ := Σ aᵢWᵢ^(j) + zⱼ[δ]₁^(j)
     let blinded_wires: Vec<E::G1Projective> = www
         .iter()
         .zip(deltas.iter())

@@ -1,9 +1,7 @@
 use crate::util::{dot_prod, TranscriptProtocol};
 
-use std::io::{Read, Write};
-
 use ark_ec::group::Group;
-use ark_serialize::{CanonicalDeserialize, CanonicalSerialize, SerializationError};
+use ark_serialize::{CanonicalDeserialize, CanonicalSerialize, Read, SerializationError, Write};
 use ark_std::{
     rand::{CryptoRng, Rng},
     UniformRand,
