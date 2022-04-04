@@ -1,4 +1,4 @@
-use linkg16::{groth16::*, link::*};
+use linkg16::groth16::*;
 
 use ark_bls12_381::Bls12_381 as F;
 use ark_crypto_primitives::prf::{
@@ -16,7 +16,6 @@ use ark_relations::{
 };
 use ark_std::rand::Rng;
 use criterion::{criterion_group, criterion_main, Criterion};
-use merlin::Transcript;
 
 type Fr = <F as PairingEngine>::Fr;
 
@@ -192,10 +191,8 @@ fn bench_link(c: &mut Criterion) {
     // Now the linkage test. Construct a linkage proof
     c.bench_function("Link: Proving 3 proofs all share 2 inputs", |b| {
         b.iter(|| {
-            let mut proving_transcript = Transcript::new(b"test_preimage_circuit_linkage");
-            link_wt(
+            linkg16::link(
                 &mut rng,
-                &mut proving_transcript,
                 &[
                     (&vk_single1, &proof_single1),
                     (&vk_single2, &proof_single2),
@@ -206,10 +203,8 @@ fn bench_link(c: &mut Criterion) {
         })
     });
 
-    let mut proving_transcript = Transcript::new(b"test_preimage_circuit_linkage");
-    let link_proof = link_wt(
+    let link_proof = linkg16::link(
         &mut rng,
-        &mut proving_transcript,
         &[
             (&vk_single1, &proof_single1),
             (&vk_single2, &proof_single2),
@@ -229,9 +224,7 @@ fn bench_link(c: &mut Criterion) {
 
     c.bench_function("Link: Verifying 3 proofs all share 2 inputs", |b| {
         b.iter(|| {
-            let mut verifying_transcript = Transcript::new(b"test_preimage_circuit_linkage");
-            assert!(verify_link_wt(
-                &mut verifying_transcript,
+            assert!(linkg16::verify_link(
                 &link_proof,
                 &[
                     (&vk_single1, &prepared_input_single1),

@@ -28,7 +28,36 @@ impl<E: PairingEngine> LinkedProof<E> {
     }
 }
 
-// Link Groth16 proofs (with transcript)
+/// Link Groth16 proofs, given a list of common inputs as well as a list of the underlying proofs
+/// with their corresponding CRS.
+pub fn link<E, R>(
+    rng: &mut R,
+    data: &[(&VerifyingKey<E>, &Proof<E>)],
+    common_inputs: &[E::Fr],
+) -> LinkedProof<E>
+where
+    E: PairingEngine,
+    R: Rng + CryptoRng,
+{
+    // Make a new transcript and call `link_wt`
+    let mut transcript = Transcript::new(b"toplevel LinkG16");
+    link_wt(rng, &mut transcript, data, common_inputs)
+}
+
+/// Verify linked Groth16 proofs, given a linkage proof, the proofs' CRSs, and the proofs' prepared
+/// public inputs.
+pub fn verify_link<E: PairingEngine>(
+    proof: &LinkedProof<E>,
+    data: &[(&VerifyingKey<E>, &E::G1Projective)],
+) -> Result<bool, SynthesisError> {
+    // Make a new transcript and call `verify_link_wt`
+    let mut transcript = Transcript::new(b"toplevel LinkG16");
+    verify_link_wt(&mut transcript, proof, data)
+}
+
+/// Link Groth16 proofs, given a list of common inputs as well as a list of the underlying proofs
+/// with their corresponding CRS. This takes a `Transcript` parameter, meaning it can be used as a
+/// subprotocol inside a larger noninteractive protocol.
 pub fn link_wt<E, R>(
     rng: &mut R,
     transcript: &mut Transcript,
@@ -105,6 +134,9 @@ where
     }
 }
 
+/// Verify linked Groth16 proofs, given a linkage proof, the proofs' CRSs, and the proofs' prepared
+/// public inputs. This takes a `Transcript` parameter, meaning it can be used as a subprotocol
+/// inside a larger noninteractive protocol.
 pub fn verify_link_wt<E: PairingEngine>(
     transcript: &mut Transcript,
     proof: &LinkedProof<E>,
@@ -368,10 +400,8 @@ mod tests {
         assert!(verify_proof(&vk_double, &proof_double, &public_inputs_double).unwrap());
 
         // Now the linkage test. Construct a linkage proof
-        let mut proving_transcript = Transcript::new(b"test_preimage_circuit_linkage");
-        let link_proof = link_wt(
+        let link_proof = link(
             &mut rng,
-            &mut proving_transcript,
             &[
                 (&pk_single1.verifying_key(), &proof_single1),
                 (&pk_single2.verifying_key(), &proof_single2),
@@ -389,9 +419,7 @@ mod tests {
         let prepared_input_double =
             prepare_inputs(&vk_double, &public_inputs_double[num_hidden_inputs..]).unwrap();
 
-        let mut verifying_transcript = Transcript::new(b"test_preimage_circuit_linkage");
-        assert!(verify_link_wt(
-            &mut verifying_transcript,
+        assert!(verify_link(
             &link_proof,
             &[
                 (&vk_single1, &prepared_input_single1),
