@@ -12,6 +12,12 @@ ark-serialize = { version = "0.3", features = [ "derive" ] }
 ark-std = "0.3"
 merlin = "3"
 
+[features]
+default = ["std", "asm", "parallel"]
+asm = ["ark-ff/asm"]
+std = ["ark-groth16/std"]
+parallel = ["ark-groth16/parallel"]
+
 [dev-dependencies]
 ark-bls12-381 = "0.3"
 ark-r1cs-std = "0.3"
