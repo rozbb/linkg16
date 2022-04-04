@@ -185,12 +185,9 @@ fn bench_link(c: &mut Criterion) {
     let vk_single1 = pk_single1.verifying_key();
     let vk_single2 = pk_single2.verifying_key();
     let vk_double = pk_double.verifying_key();
-    let pvk_single1 = vk_single1.prepare();
-    let pvk_single2 = vk_single2.prepare();
-    let pvk_double = vk_double.prepare();
-    assert!(verify_proof(&pvk_single1, &proof_single1, &public_inputs_single1).unwrap());
-    assert!(verify_proof(&pvk_single2, &proof_single2, &public_inputs_single2).unwrap());
-    assert!(verify_proof(&pvk_double, &proof_double, &public_inputs_double).unwrap());
+    assert!(verify_proof(&vk_single1, &proof_single1, &public_inputs_single1).unwrap());
+    assert!(verify_proof(&vk_single2, &proof_single2, &public_inputs_single2).unwrap());
+    assert!(verify_proof(&vk_double, &proof_double, &public_inputs_double).unwrap());
 
     // Now the linkage test. Construct a linkage proof
     c.bench_function("Link: Proving 3 proofs all share 2 inputs", |b| {
@@ -224,11 +221,11 @@ fn bench_link(c: &mut Criterion) {
     // Now the veriifer checks the proofs. Note, the verifier does not know the common inputs,
     // and so we slice those out.
     let prepared_input_single1 =
-        prepare_inputs(&pvk_single1, &public_inputs_single1[num_hidden_inputs..]).unwrap();
+        prepare_inputs(&vk_single1, &public_inputs_single1[num_hidden_inputs..]).unwrap();
     let prepared_input_single2 =
-        prepare_inputs(&pvk_single2, &public_inputs_single2[num_hidden_inputs..]).unwrap();
+        prepare_inputs(&vk_single2, &public_inputs_single2[num_hidden_inputs..]).unwrap();
     let prepared_input_double =
-        prepare_inputs(&pvk_double, &public_inputs_double[num_hidden_inputs..]).unwrap();
+        prepare_inputs(&vk_double, &public_inputs_double[num_hidden_inputs..]).unwrap();
 
     c.bench_function("Link: Verifying 3 proofs all share 2 inputs", |b| {
         b.iter(|| {
@@ -237,9 +234,9 @@ fn bench_link(c: &mut Criterion) {
                 &mut verifying_transcript,
                 &link_proof,
                 &[
-                    (&pvk_single1, &prepared_input_single1),
-                    (&pvk_single2, &prepared_input_single2),
-                    (&pvk_double, &prepared_input_double)
+                    (&vk_single1, &prepared_input_single1),
+                    (&vk_single2, &prepared_input_single2),
+                    (&vk_double, &prepared_input_double)
                 ],
             )
             .unwrap())

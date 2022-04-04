@@ -16,8 +16,9 @@ pub struct ProvingKey<E: PairingEngine> {
 
 impl<E: PairingEngine> ProvingKey<E> {
     pub fn verifying_key(&self) -> VerifyingKey<E> {
+        let ark_pvk = ark_groth16::prepare_verifying_key(&self.ark_pk.vk);
         VerifyingKey {
-            ark_vk: self.ark_pk.vk.clone(),
+            ark_pvk,
             g1_generator: self.g1_generator,
             delta_g1: self.ark_pk.delta_g1.into(),
         }
@@ -30,28 +31,11 @@ pub struct Proof<E: PairingEngine>(pub ark_groth16::Proof<E>);
 #[derive(CanonicalSerialize, CanonicalDeserialize, Clone, Debug)]
 pub struct BlindedProof<E: PairingEngine>(pub ark_groth16::Proof<E>);
 
-#[derive(CanonicalSerialize, CanonicalDeserialize, Clone, Debug)]
-pub struct VerifyingKey<E: PairingEngine> {
-    pub ark_vk: ark_groth16::VerifyingKey<E>,
-    pub g1_generator: E::G1Projective,
-    pub delta_g1: E::G1Projective,
-}
-
 #[derive(Clone, Debug)]
-pub struct PreparedVerifyingKey<E: PairingEngine> {
+pub struct VerifyingKey<E: PairingEngine> {
     pub ark_pvk: ark_groth16::PreparedVerifyingKey<E>,
     pub g1_generator: E::G1Projective,
     pub delta_g1: E::G1Projective,
-}
-
-impl<E: PairingEngine> VerifyingKey<E> {
-    pub fn prepare(&self) -> PreparedVerifyingKey<E> {
-        PreparedVerifyingKey {
-            ark_pvk: ark_groth16::prepare_verifying_key(&self.ark_vk),
-            g1_generator: self.g1_generator,
-            delta_g1: self.delta_g1,
-        }
-    }
 }
 
 pub fn generate_random_parameters<E, C, R>(
@@ -105,7 +89,7 @@ where
 }
 
 pub fn verify_proof<E: PairingEngine>(
-    pvk: &PreparedVerifyingKey<E>,
+    pvk: &VerifyingKey<E>,
     proof: &Proof<E>,
     public_inputs: &[E::Fr],
 ) -> R1CSResult<bool> {
@@ -116,7 +100,7 @@ pub fn verify_proof<E: PairingEngine>(
 // the number of circuit public inputs, we assume it's because those are hidden and we pad it with
 // leading 0s.
 pub fn prepare_inputs<E: PairingEngine>(
-    pvk: &PreparedVerifyingKey<E>,
+    pvk: &VerifyingKey<E>,
     public_inputs: &[E::Fr],
 ) -> Result<E::G1Projective, SynthesisError> {
     let pvk = &pvk.ark_pvk;

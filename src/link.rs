@@ -54,7 +54,7 @@ where
     let www: Vec<Vec<E::G1Projective>> = data
         .iter()
         .map(|(vk, _)| {
-            vk.ark_vk.gamma_abc_g1[1..1 + num_common_inputs]
+            vk.ark_pvk.vk.gamma_abc_g1[1..1 + num_common_inputs]
                 .iter()
                 .cloned()
                 .map(E::G1Projective::from)
@@ -90,7 +90,7 @@ where
         .iter()
         .zip(zz.iter())
         .map(|((vk, proof), z)| {
-            let mut proof = ark_groth16::rerandomize_proof(rng, &vk.ark_vk, &proof.0);
+            let mut proof = ark_groth16::rerandomize_proof(rng, &vk.ark_pvk.vk, &proof.0);
             // C' = C - zG
             let new_c = proof.c.into_projective() - vk.g1_generator.mul(z.into_repr());
             proof.c = new_c.into_affine();
@@ -108,7 +108,7 @@ where
 pub fn verify_link_wt<E: PairingEngine>(
     transcript: &mut Transcript,
     proof: &LinkedProof<E>,
-    data: &[(&PreparedVerifyingKey<E>, &E::G1Projective)],
+    data: &[(&VerifyingKey<E>, &E::G1Projective)],
 ) -> Result<bool, SynthesisError> {
     let num_proofs = proof.num_linked_proofs();
     let num_common_inputs = proof.num_hidden_inputs();
@@ -128,8 +128,8 @@ pub fn verify_link_wt<E: PairingEngine>(
     // {W₀{(k)}, ..., W_{t-1}^{(k)}},
     let www: Vec<Vec<E::G1Projective>> = data
         .iter()
-        .map(|(pvk, _)| {
-            pvk.ark_pvk.vk.gamma_abc_g1[1..1 + num_common_inputs]
+        .map(|(vk, _)| {
+            vk.ark_pvk.vk.gamma_abc_g1[1..1 + num_common_inputs]
                 .iter()
                 .cloned()
                 .map(E::G1Projective::from)
@@ -142,13 +142,13 @@ pub fn verify_link_wt<E: PairingEngine>(
     }
 
     // Now check all the equations wrt inputs blinded_wire + given_input
-    for ((blind_wire, proof), (pvk, pub_input)) in blinded_wires
+    for ((blind_wire, proof), (vk, pub_input)) in blinded_wires
         .iter()
         .zip(blinded_proofs.iter())
         .zip(data.iter())
     {
         let proof_input = *blind_wire + *pub_input;
-        if !ark_groth16::verify_proof_with_prepared_inputs(&pvk.ark_pvk, &proof.0, &proof_input)? {
+        if !ark_groth16::verify_proof_with_prepared_inputs(&vk.ark_pvk, &proof.0, &proof_input)? {
             return Ok(false);
         }
     }
@@ -326,8 +326,8 @@ mod tests {
             HashPreimageCircuit::prove(&mut rng, &pk, use_ki, k1, k2, domain_str);
 
         // Now verify the proof
-        let pvk = pk.verifying_key().prepare();
-        assert!(verify_proof(&pvk, &proof, &public_inputs).unwrap());
+        let vk = pk.verifying_key();
+        assert!(verify_proof(&vk, &proof, &public_inputs).unwrap());
     }
 
     /// In this test we make three circuits. One computes `H(domain_str1, k1)`. One computes
@@ -360,12 +360,12 @@ mod tests {
             HashPreimageCircuit::prove(&mut rng, &pk_double, 3, k1, k2, domain_str2);
 
         // Verify the proofs naively. This is just a sanity check
-        let pvk_single1 = pk_single1.verifying_key().prepare();
-        let pvk_single2 = pk_single2.verifying_key().prepare();
-        let pvk_double = pk_double.verifying_key().prepare();
-        assert!(verify_proof(&pvk_single1, &proof_single1, &public_inputs_single1).unwrap());
-        assert!(verify_proof(&pvk_single2, &proof_single2, &public_inputs_single2).unwrap());
-        assert!(verify_proof(&pvk_double, &proof_double, &public_inputs_double).unwrap());
+        let vk_single1 = pk_single1.verifying_key();
+        let vk_single2 = pk_single2.verifying_key();
+        let vk_double = pk_double.verifying_key();
+        assert!(verify_proof(&vk_single1, &proof_single1, &public_inputs_single1).unwrap());
+        assert!(verify_proof(&vk_single2, &proof_single2, &public_inputs_single2).unwrap());
+        assert!(verify_proof(&vk_double, &proof_double, &public_inputs_double).unwrap());
 
         // Now the linkage test. Construct a linkage proof
         let mut proving_transcript = Transcript::new(b"test_preimage_circuit_linkage");
@@ -383,26 +383,20 @@ mod tests {
         // Now the veriifer checks the proofs. Note, the verifier does not know the common inputs,
         // and so we slice those out.
         let prepared_input_single1 =
-            prepare_inputs(&pvk_single1, &public_inputs_single1[num_hidden_inputs..]).unwrap();
+            prepare_inputs(&vk_single1, &public_inputs_single1[num_hidden_inputs..]).unwrap();
         let prepared_input_single2 =
-            prepare_inputs(&pvk_single2, &public_inputs_single2[num_hidden_inputs..]).unwrap();
+            prepare_inputs(&vk_single2, &public_inputs_single2[num_hidden_inputs..]).unwrap();
         let prepared_input_double =
-            prepare_inputs(&pvk_double, &public_inputs_double[num_hidden_inputs..]).unwrap();
+            prepare_inputs(&vk_double, &public_inputs_double[num_hidden_inputs..]).unwrap();
 
         let mut verifying_transcript = Transcript::new(b"test_preimage_circuit_linkage");
         assert!(verify_link_wt(
             &mut verifying_transcript,
             &link_proof,
             &[
-                (
-                    &pk_single1.verifying_key().prepare(),
-                    &prepared_input_single1
-                ),
-                (
-                    &pk_single2.verifying_key().prepare(),
-                    &prepared_input_single2
-                ),
-                (&pk_double.verifying_key().prepare(), &prepared_input_double)
+                (&vk_single1, &prepared_input_single1),
+                (&vk_single2, &prepared_input_single2),
+                (&vk_double, &prepared_input_double)
             ],
         )
         .unwrap());
