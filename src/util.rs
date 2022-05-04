@@ -1,7 +1,20 @@
-use ark_ec::group::Group;
-use ark_ff::PrimeField;
+use ark_ec::{group::Group, PairingEngine};
+use ark_ff::{PrimeField, UniformRand};
 use ark_serialize::CanonicalSerialize;
 use ark_std::rand::{rngs::StdRng, SeedableRng};
+
+// Deterministically get generators for E::G1 and E::G2
+pub(crate) fn get_group_generators<E: PairingEngine>() -> (E::G1Projective, E::G2Projective) {
+    // A nothing-up-my-sleeve seed
+    let mut seed = [0u8; 32];
+    seed[0..18].copy_from_slice(b"linkg16-generators");
+    let mut rng = StdRng::from_seed(seed);
+
+    (
+        E::G1Projective::rand(&mut rng),
+        E::G2Projective::rand(&mut rng),
+    )
+}
 
 // Computes the dot product rr·gg where rr are scalars and gg are group elements
 pub(crate) fn dot_prod<G: Group>(rr: &[G::ScalarField], gg: &[G]) -> G {

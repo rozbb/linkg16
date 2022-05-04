@@ -121,7 +121,7 @@ where
         .map(|((vk, proof), z)| {
             let mut proof = ark_groth16::rerandomize_proof(rng, &vk.ark_pvk.vk, &proof.0);
             // C' = C - zG
-            let new_c = proof.c.into_projective() - vk.g1_generator.mul(z.into_repr());
+            let new_c = proof.c.into_projective() - vk.g1_gen.mul(z.into_repr());
             proof.c = new_c.into_affine();
             BlindedProof(proof)
         })

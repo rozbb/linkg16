@@ -1,6 +1,8 @@
 //! We have to implement a lot of the Groth16 API because we need verification keys to strore
 //! [δ]₁ as well as the generator of G1. We also need to make sure that γ = 1.
 
+use crate::util::get_group_generators;
+
 use ark_ec::{AffineCurve, PairingEngine};
 use ark_ff::{One, PrimeField, UniformRand};
 use ark_relations::r1cs::{ConstraintSynthesizer, Result as R1CSResult, SynthesisError};
@@ -10,8 +12,10 @@ use core::ops::AddAssign;
 
 #[derive(CanonicalSerialize, CanonicalDeserialize, Clone, Debug)]
 pub struct ProvingKey<E: PairingEngine> {
+    /// The underlying proving key
     pub ark_pk: ark_groth16::ProvingKey<E>,
-    pub g1_generator: E::G1Projective,
+    /// The generator we chose for `E::G1`
+    pub g1_gen: E::G1Projective,
 }
 
 impl<E: PairingEngine> ProvingKey<E> {
@@ -19,7 +23,7 @@ impl<E: PairingEngine> ProvingKey<E> {
         let ark_pvk = ark_groth16::prepare_verifying_key(&self.ark_pk.vk);
         VerifyingKey {
             ark_pvk,
-            g1_generator: self.g1_generator,
+            g1_gen: self.g1_gen,
             delta_g1: self.ark_pk.delta_g1.into(),
         }
     }
@@ -34,7 +38,7 @@ pub struct BlindedProof<E: PairingEngine>(pub ark_groth16::Proof<E>);
 #[derive(Clone, Debug)]
 pub struct VerifyingKey<E: PairingEngine> {
     pub ark_pvk: ark_groth16::PreparedVerifyingKey<E>,
-    pub g1_generator: E::G1Projective,
+    pub g1_gen: E::G1Projective,
     pub delta_g1: E::G1Projective,
 }
 
@@ -54,25 +58,13 @@ where
     let alpha = E::Fr::rand(rng);
     let beta = E::Fr::rand(rng);
     let delta = E::Fr::rand(rng);
-
-    let g1_generator = E::G1Projective::rand(rng);
-    let g2_generator = E::G2Projective::rand(rng);
+    let (g1_gen, g2_gen) = get_group_generators::<E>();
 
     let ark_pk = ark_groth16::generator::generate_parameters::<E, C, R>(
-        circuit,
-        alpha,
-        beta,
-        gamma,
-        delta,
-        g1_generator,
-        g2_generator,
-        rng,
+        circuit, alpha, beta, gamma, delta, g1_gen, g2_gen, rng,
     )?;
 
-    Ok(ProvingKey {
-        ark_pk,
-        g1_generator,
-    })
+    Ok(ProvingKey { ark_pk, g1_gen })
 }
 
 pub fn create_random_proof<E, C, R>(
