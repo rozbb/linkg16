@@ -18,8 +18,8 @@ impl<E: PairingEngine> CanonicalSerialize for VerifyingKey<E> {
     fn serialize<W: Write>(&self, writer: W) -> Result<(), SerializationError> {
         let s = SerializedVerifyingKey {
             ark_vk: self.ark_pvk.vk.clone(),
-            g1_gen: self.g1_gen.clone(),
-            delta_g1: self.delta_g1.clone(),
+            g1_gen: self.g1_gen,
+            delta_g1: self.delta_g1,
         };
         s.serialize(writer)
     }
@@ -28,8 +28,8 @@ impl<E: PairingEngine> CanonicalSerialize for VerifyingKey<E> {
     fn serialized_size(&self) -> usize {
         let s = SerializedVerifyingKey {
             ark_vk: self.ark_pvk.vk.clone(),
-            g1_gen: self.g1_gen.clone(),
-            delta_g1: self.delta_g1.clone(),
+            g1_gen: self.g1_gen,
+            delta_g1: self.delta_g1,
         };
         s.serialized_size()
     }
@@ -39,16 +39,6 @@ impl<E: PairingEngine> CanonicalSerialize for VerifyingKey<E> {
 impl<E: PairingEngine> CanonicalDeserialize for VerifyingKey<E> {
     fn deserialize<R: Read>(reader: R) -> Result<Self, SerializationError> {
         let svk = SerializedVerifyingKey::<E>::deserialize(reader)?;
-
-        Ok(VerifyingKey {
-            ark_pvk: ark_groth16::prepare_verifying_key(&svk.ark_vk),
-            g1_gen: svk.g1_gen,
-            delta_g1: svk.delta_g1,
-        })
-    }
-
-    fn deserialize_unchecked<R: Read>(reader: R) -> Result<Self, SerializationError> {
-        let svk = SerializedVerifyingKey::<E>::deserialize_unchecked(reader)?;
 
         Ok(VerifyingKey {
             ark_pvk: ark_groth16::prepare_verifying_key(&svk.ark_vk),

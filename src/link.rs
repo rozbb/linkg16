@@ -208,6 +208,19 @@ mod tests {
     };
     type Fr = <F as PairingEngine>::Fr;
 
+    // Does a round trip serialization -> deserialization on a given value. This should be able to
+    // be sprinkled in anywhere without changing behavior
+    fn serialization_roundtrip<T>(val: &mut T)
+    where
+        T: CanonicalSerialize + CanonicalDeserialize,
+    {
+        let mut buf = Vec::new();
+        val.serialize(&mut buf).unwrap();
+
+        let mut cursor = buf.as_slice();
+        *val = T::deserialize(&mut cursor).unwrap();
+    }
+
     /// Depending on use_ki, this circuit will do one of three things:
     ///   If use_ki = 1 this circuit proves `H(domain_str, k1) = digest`, where
     ///     all variables are public input.
@@ -358,7 +371,11 @@ mod tests {
             HashPreimageCircuit::prove(&mut rng, &pk, use_ki, k1, k2, domain_str);
 
         // Now verify the proof
-        let vk = pk.verifying_key();
+        let mut vk = pk.verifying_key();
+        {
+            // serialize -> deserialize; should be a no-op
+            serialization_roundtrip(&mut vk);
+        }
         assert!(verify_proof(&vk, &proof, &public_inputs).unwrap());
     }
 
@@ -392,9 +409,15 @@ mod tests {
             HashPreimageCircuit::prove(&mut rng, &pk_double, 3, k1, k2, domain_str2);
 
         // Verify the proofs naively. This is just a sanity check
-        let vk_single1 = pk_single1.verifying_key();
-        let vk_single2 = pk_single2.verifying_key();
-        let vk_double = pk_double.verifying_key();
+        let mut vk_single1 = pk_single1.verifying_key();
+        let mut vk_single2 = pk_single2.verifying_key();
+        let mut vk_double = pk_double.verifying_key();
+        {
+            // serialize -> deserialize; should be a no-op
+            serialization_roundtrip(&mut vk_single1);
+            serialization_roundtrip(&mut vk_single2);
+            serialization_roundtrip(&mut vk_double);
+        }
         assert!(verify_proof(&vk_single1, &proof_single1, &public_inputs_single1).unwrap());
         assert!(verify_proof(&vk_single2, &proof_single2, &public_inputs_single2).unwrap());
         assert!(verify_proof(&vk_double, &proof_double, &public_inputs_double).unwrap());
@@ -403,9 +426,9 @@ mod tests {
         let link_proof = link(
             &mut rng,
             &[
-                (&pk_single1.verifying_key(), &proof_single1),
-                (&pk_single2.verifying_key(), &proof_single2),
-                (&pk_double.verifying_key(), &proof_double),
+                (&vk_single1, &proof_single1),
+                (&vk_single2, &proof_single2),
+                (&vk_double, &proof_double),
             ],
             hidden_inputs,
         );
