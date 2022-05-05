@@ -214,11 +214,23 @@ mod tests {
     where
         T: CanonicalSerialize + CanonicalDeserialize,
     {
-        let mut buf = Vec::new();
-        val.serialize(&mut buf).unwrap();
+        // Do a round trip for uncompressed/unchecked ser/deser
+        {
+            let mut buf = Vec::new();
+            val.serialize_uncompressed(&mut buf).unwrap();
 
-        let mut cursor = buf.as_slice();
-        *val = T::deserialize(&mut cursor).unwrap();
+            let mut cursor = buf.as_slice();
+            *val = T::deserialize_unchecked(&mut cursor).unwrap();
+        }
+
+        // Now do a round trip for compressed/checked ser/deser
+        {
+            let mut buf = Vec::new();
+            val.serialize(&mut buf).unwrap();
+
+            let mut cursor = buf.as_slice();
+            *val = T::deserialize(&mut cursor).unwrap();
+        }
     }
 
     /// Depending on use_ki, this circuit will do one of three things:
