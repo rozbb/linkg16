@@ -32,6 +32,12 @@ impl<E: PairingEngine> ProvingKey<E> {
 #[derive(CanonicalSerialize, CanonicalDeserialize, Clone, Debug)]
 pub struct Proof<E: PairingEngine>(pub ark_groth16::Proof<E>);
 
+impl<E: PairingEngine> Default for Proof<E> {
+    fn default() -> Proof<E> {
+        Proof(ark_groth16::Proof::default())
+    }
+}
+
 #[derive(CanonicalSerialize, CanonicalDeserialize, Clone, Debug)]
 pub struct BlindedProof<E: PairingEngine>(pub ark_groth16::Proof<E>);
 
