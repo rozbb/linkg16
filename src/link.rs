@@ -1,3 +1,5 @@
+//! Defines the `link` function
+
 use crate::{
     groth16::*,
     multi_dleq::{prove_multi_dleq, verify_multi_dleq, MultiDleqProof},
@@ -29,7 +31,8 @@ impl<E: PairingEngine> LinkedProof<E> {
 }
 
 /// Link Groth16 proofs, given a list of common inputs as well as a list of the underlying proofs
-/// with their corresponding CRS.
+/// with their corresponding CRS. If `n` common inputs are given, they MUST be the first `n` public
+/// inputs of the circuits, in the order they are witnessed.
 pub fn link<E, R>(
     rng: &mut R,
     data: &[(&VerifyingKey<E>, &Proof<E>)],
@@ -56,8 +59,9 @@ pub fn verify_link<E: PairingEngine>(
 }
 
 /// Link Groth16 proofs, given a list of common inputs as well as a list of the underlying proofs
-/// with their corresponding CRS. This takes a `Transcript` parameter, meaning it can be used as a
-/// subprotocol inside a larger noninteractive protocol.
+/// with their corresponding CRS. If `n` common inputs are given, they MUST be the first `n` public
+/// inputs of the circuits, in the order they are witnessed. This takes a `Transcript` parameter,
+/// meaning it can be used as a subprotocol inside a larger noninteractive protocol.
 pub fn link_wt<E, R>(
     rng: &mut R,
     transcript: &mut Transcript,
